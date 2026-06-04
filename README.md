@@ -1,7 +1,7 @@
 # ea6x21-dkms
 wifi driver for EA6521 and EA6621 WIFI driver
 
-#Seekwave Wifi6  (ea6x21q) Linux Driver 
+# Seekwave Wifi6  (ea6x21q) Linux Driver 
 
 The driver was tested on a X88PRO13 TV box  under Armbian  with RK3525 CPU and EA6521 Wifi Chip. 
 It should be compatible with other WiFi SDIO adapters with the same chip of EA6x21 inside.  
@@ -23,9 +23,9 @@ Note that the kernel should has configuration as below.  This is default config 
             <M>     Support for rtllib WEP crypto
 ```
 
-##Device Tree:
+## Device Tree:
 
-###add this to your device Tree source file (dts)
+### add this to your device Tree source file (dts)
 tis example is for the X88PRO13 TV box. __ modyfy this to our Board specific Hardware__
 ```
 seekwcn_boot>;
@@ -42,7 +42,7 @@ seekwcn_boot>;
 	status = "okay";
 };
 ```
-###or apply this device tree overlay:   
+### or apply this device tree overlay:   
 
 
 ```
@@ -75,7 +75,7 @@ Apply overlay with
   sudo armbian-add-overlay rk35xx_openvfd.dts 
   sudo reboot  
 ```
-##Install driver:
+## Install driver:
 ```
 git clone https://github.com/joilg/dkms-ea6x21.git
 
@@ -92,7 +92,7 @@ modprobe skw_bootcoms
 modprobe skw
 modprobe skwbt
 
-###to load on startup
+### to load on startup
 cat <<EOF > /etc/modules-load.d/skw.conf
 hidp
 rfcomm
@@ -104,12 +104,14 @@ skwbt
 EOF
 
 
-##troubleshooting
+## troubleshooting
 
-Test wifi chip
-## sudo journalctl -b | grep SDIO
+### Test wifi chip
+```## sudo journalctl -b | grep SDIO
        kernel: mmc2: new ultra high speed SDR104 SDIO card at address 8800
+```
 
+```
 ## sudo ip link 
 ...
 ...
@@ -117,6 +119,7 @@ Test wifi chip
     link/ether xx:xx:xx:xx:xx:xx brd ff:ff:ff:ff:ff:ff permaddr xx:xx:xx:xx:xx:xx
     altname xxxxxxxxxxxx
 ...
+```
 
 ## uninstall: 
 ```
