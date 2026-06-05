@@ -26,7 +26,7 @@ Note that the kernel should has configuration as below.  This is default config 
 ## Device Tree:
 
 ### add this to your device Tree source file (dts)
-tis example is for the X88PRO13 TV box. __ modyfy this to our Board specific Hardware__
+tis example is for the X88PRO13 TV box.  ** modyfy this acording our Board specific Hardware **
 ```
 seekwcn_boot>;
 	compatible = "seekwave,sv6160";
@@ -35,16 +35,14 @@ seekwcn_boot>;
 	skw_dram_path = "/lib/firmware/SWT6621_DRAM_SDIO.bin";
 	bt_antenna = <0>;   /* no BT_antenna setting */
 	// seekwave_nv_name = "SEEKWAVE_NV_SWT6652.bin";
-	gpio_host_wake = <50>;                      // __Insert here your Board specific GPIO __
-	gpio_chip_wake = <49>;                       // __Insert here your Board specific GPIO __
-	gpio_chip_en =	  <38>;                       // __Insert here your Board specific GPIO __
+	gpio_host_wake = <50>;                      // ** Insert here your Board specific GPIO ** 
+	gpio_chip_wake = <49>;                       // ** Insert here your Board specific GPIO ** 
+	gpio_chip_en =	  <38>;                       // ** Insert here your Board specific GPIO ** 
 	pinctrl-names = "default";
 	status = "okay";
 };
 ```
 ### or apply this device tree overlay:   
-
-
 ```
 /dts-v1/;
 /plugin/;
@@ -85,15 +83,25 @@ sudo dkms add -m ea6621q -v 1.0
 sudo dkms build -m ea6621q -v 1.0
 sudo dkms install -m ea6621q -v 1.0 
 ```
+
+## Firmware
+
+```
+sudo mkdir /usr/lib/firmware/skw
+sudo cp dkms-ea6x21q/ea6x21p/firmware/*  /usr/lib/firmware/skw/
+```
+
 ## load driver 
 
+```
 modprobe skw_sdio
 modprobe skw_bootcoms
 modprobe skw
 modprobe skwbt
+```
 
 ### to load on startup
-cat <<EOF > /etc/modules-load.d/skw.conf
+```cat <<EOF > /etc/modules-load.d/skw.conf
 hidp
 rfcomm
 bnep
@@ -102,24 +110,36 @@ skw_bootcoms
 skw
 skwbt
 EOF
-
-
-## troubleshooting
-
-### Test wifi chip
-```## sudo journalctl -b | grep SDIO
-       kernel: mmc2: new ultra high speed SDR104 SDIO card at address 8800
 ```
 
+# Test
+After reboot 
+ip link should show a valid WLAN 
+
 ```
-## sudo ip link 
-...
-...
+sudo ip link 
+--
 3: wlan0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP mode DORMANT group default qlen 1000
     link/ether xx:xx:xx:xx:xx:xx brd ff:ff:ff:ff:ff:ff permaddr xx:xx:xx:xx:xx:xx
     altname xxxxxxxxxxxx
-...
 ```
+
+use armbian-config to connect to Wlan Access point
+
+## troubleshooting
+
+### Test SDIO 
+```
+sudo journalctl -b | grep SDIO
+       kernel: mmc2: new ultra high speed SDR104 SDIO card at address 8800
+```
+
+### inspect systemlog:
+```
+sudo dmesg | grep SKW
+
+```
+
 
 ## uninstall: 
 ```
@@ -129,6 +149,6 @@ dkms remove -m ea6621q -v 1.0
 
 ## Contributing
 
-Feel free to dive in! [Open an issue](https://github.com/joilg/ea6x21/issues/new) or submit PRs.
+Feel free to dive in! [Open an issue](https://github.com/joilg/ea6x21-dkms/issues/new) or submit PRs.
 
 
