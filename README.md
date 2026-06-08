@@ -3,11 +3,12 @@ Seekwave SV6160 / SWT6652 Wi-Fi 6 & Bluetooth Driver (DKMS)
 
 # Seekwave Wifi6  (ea6x21q) Linux Driver 
 
-
 The driver was tested on a X88PRO13 TV box  under Armbian  with RK3525 CPU and EA6521 Wifi Chip. 
 It should be compatible with other WiFi SDIO adapters with the same chip of EA6x21 inside.  
+Orginal driver Software from 
 
-A modern Linux Kernel  driver port for the **Seekwave SV6160 / SWT6x51 ** / combo Wi-Fi 6 and Bluetooth chipsets.
+A Linux Kernel  driver port for the **Seekwave SV6160 / SWT6x51 ** / combo Wi-Fi 6 and Bluetooth chipsets.
+
 Optimized for Single Board Computers (SBCs) and TV Boxes running on Rockchip SoCs (e.g., **RK3528**, RK3562, RK3566, RK3588) such as the **X88 PRO 13**.
 
 This repository contains critical modernization fixes over vendor SDKs, including Linux 6.1+ DMA-API scatterlist mapping and dual-subsystem (Wi-Fi + BT) GPIO-sharing resource allocation.
@@ -117,7 +118,7 @@ Apply overlay with
 ## 🚀 Installation via DKMS
 
 1. Clone this repository directly onto your device:
-   ```bash
+```
    git clone https://github.com/joilg/dkms-ea6x21.git
    sudo cp -r ea6x21-dkms/ea6x21p-1.0 /usr/src/
 ```
@@ -131,19 +132,19 @@ sudo cp dkms-ea6x21q/ea6x21p/firmware/*  /usr/lib/firmware/skw/
 ```
 
 3. Register the driver source code directory tree with DKMS:
-   ```bash
+```
 sudo dkms add -m ea6x21q -v 1.0
-  ```
+```
 
 4. Build the modified module binaries against your active system kernel headers:
-   ```bash
+```
 sudo dkms build -m ea6x21q -v 1.0
-   ```
+```
 
 4. Install the module into the active kernel environment:
-   ```bash
+```
  sudo dkms install -m ea6x21q -v 1.0 
-   ```
+```
 5. load modules  
 ```
 modprobe skw_sdio
@@ -152,7 +153,8 @@ modprobe skw
 modprobe skwbt
 ```
 6. for automatic load at startup insert modulenames /etc/modules-load.d/skw.conf
-```cat <<EOF > /etc/modules-load.d/skw.conf
+```
+cat <<EOF > /etc/modules-load.d/skw.conf
 hidp
 rfcomm
 bnep
@@ -162,11 +164,10 @@ skw
 skwbt
 EOF
 ```
-
-7. Reload your system parameters or restart your system:
-   ```bash
+Reload your system parameters or restart your system:
+```
    sudo reboot
-   ```
+```
 
 ---
 
@@ -192,7 +193,7 @@ Run `dmesg | grep -E "SKW"` to observe the initialization steps. A successful la
 ```
 
 Verify your network interface state:
-```bash
+```
 ip link show wlan0
 ```
 It should report `<BROADCAST,MULTICAST,UP,LOWER_UP>` with a dynamic IP assigned by your router.
@@ -203,7 +204,7 @@ Armbian OS use ** armbian-config **
 
 ### 🔷 Bluetooth Subsystem Check
 Run `hciconfig` to make sure your host controller interface configuration is fully deployed:
-```bash
+```
 hciconfig
 ```
 A correct execution output must state:
@@ -214,11 +215,20 @@ hci0:   Type: Primary  Bus: SDIO
 ```
 
 Use `bluetoothctl` to scan for neighboring hardware devices:
-```bash
+```
 bluetoothctl
 [bluetooth]# power on
 [bluetooth]# scan on
 ```
+
+## uninstall: 
+```
+dkms remove -m ea6x21q -v 1.0 --all
+rm -rf /usr/src/ea6x21q-1.0
+```
+
+
+
 
 ## 🔍 Troubleshooting
 
@@ -230,32 +240,14 @@ bluetoothctl
 ### 2. High Ping Jitter or Latenz Spikes
 * **Root Cause:** Aggressive hardware power saving state parameters within the vendor driver code.
 * **Resolution:** Disable OS-level power saving on the driver instance by executing:
-  ```bash
+  ```
   sudo iw dev wlan0 set power_save off
   ```
 
 ---
 ## 📝 License
-Licensed under the Apache License, Version 2.0 (the "License"). You may obtain a copy of the License in the LICENSE file or at http://apache.org.
-Verwende Code mit Vorsicht.If you would like me to add anything else to the documentation—such as specific troubleshooting steps for Armbian or instructions on how to cross-compile the driver—please let me know!KI-Antworten können Fehler enthalten. Weitere InformationenSeekwave SV6160 / SWT6652 Wi-Fi 6 & Bluetooth Driver (DKMS)Frag
+Licensed under the Apache License, Version 2.0 (the "License"). 
 
-### Test SDIO 
-```
-sudo journalctl -b | grep SDIO
-       kernel: mmc2: new ultra high speed SDR104 SDIO card at address 8800
-```
-
-### inspect systemlog:
-```
-sudo dmesg | grep SKW
-
-```
-
-## uninstall: 
-```
-dkms remove -m ea6x21q -v 1.0
-rm -rf /usr/src/ea6x21q-1.0
-```
 ---
 
 ## Contributing
