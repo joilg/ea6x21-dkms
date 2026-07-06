@@ -21,7 +21,6 @@
 #include <linux/gpio.h>
 #include <linux/delay.h>
 #include <linux/slab.h>
-#include <linux/of_gpio.h>
 #include <linux/completion.h>
 #include <linux/moduleparam.h>
 #include <linux/workqueue.h>
@@ -200,9 +199,7 @@ ret:
 static int seekwave_boot_parse_dt(struct platform_device *pdev, struct seekwave_device *boot_data)
 {
 	int ret = 0;
-	enum of_gpio_flags flags;
 	struct device_node *np = pdev->dev.of_node;
-	
 	/*add the dma type dts config*/
 	if (of_property_read_u32(np, "dma_type", &(boot_data->dma_type))){
 		boot_data->dma_type = ADMA;
@@ -211,9 +208,24 @@ static int seekwave_boot_parse_dt(struct platform_device *pdev, struct seekwave_
 		boot_data->chip_gpio =  MODEM_WAKEUP_GPIO_OUT;
 		skwboot_log("no DTS setting\n");
 	} else {
-		boot_data->host_gpio = of_get_named_gpio_flags(np, "gpio_host_wake", 0, &flags);
-		boot_data->chip_gpio = of_get_named_gpio_flags(np, "gpio_chip_wake",0, &flags);
-		boot_data->chip_en = of_get_named_gpio_flags(np, "gpio_chip_en",0, &flags);
+		struct gpio_desc *desc = fwnode_gpiod_get_index(of_fwnode_handle(np), NULL, 0, GPIOD_ASIS, "gpio_host_wake");
+		if (!IS_ERR(desc)) {
+			boot_data->host_gpio = desc_to_gpio(desc);
+		} else {
+			boot_data->host_gpio = -EINVAL;
+		}
+		struct gpio_desc *desc1 = fwnode_gpiod_get_index(of_fwnode_handle(np), NULL, 0, GPIOD_ASIS, "gpio_chip_wake");
+		if (!IS_ERR(desc1)) {
+			boot_data->chip_gpio = desc_to_gpio(desc1);
+		} else {
+			boot_data->chip_gpio = -EINVAL;
+		}
+		struct gpio_desc *desc2 = fwnode_gpiod_get_index(of_fwnode_handle(np), NULL, 0, GPIOD_ASIS, "gpio_chip_en");
+		if (!IS_ERR(desc2)) {
+			boot_data->chip_gpio = desc_to_gpio(desc2);
+		} else {
+			boot_data->chip_gpio = -EINVAL;
+		}
 	}
 	if(test_debug==1){//test debug inband irq and nosleep en
 		boot_data->chip_gpio=-1;
@@ -363,7 +375,11 @@ static int seekwave_boot_probe(struct  platform_device *pdev)
  *Date:
  *Modify:
  **************************************************************************/
-static int seekwave_boot_remove(struct  platform_device *pdev)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
+static void seekwave_boot_remove(struct  platform_device *pdev)
+#else
+static int seekwave_boot_remove(struct platform_device *pdev)
+#endif
 {
 	skwboot_log("%s the Enter \n", __func__);
 
@@ -394,7 +410,15 @@ static int seekwave_boot_remove(struct  platform_device *pdev)
 		boot_data=NULL;
 	}
 	mutex_destroy(&boot_mutex);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
+	return;
+#else
 	return 0;
+#endif
+
+
+
+
 }
 extern void skw_modem_log_stop_rec(void);
 static void seekwave_boot_shutdown(struct platform_device *pdev)

@@ -14,12 +14,12 @@
  * GNU General Public License for more details.
  *
  ******************************************************************************/
-
 #include <linux/ieee80211.h>
 #include <net/cfg80211.h>
 #include <linux/inetdevice.h>
 #include <net/addrconf.h>
 #include <linux/if_tunnel.h>
+#include <linux/sched/clock.h>
 
 #include "skw_core.h"
 #include "skw_iface.h"
@@ -35,6 +35,11 @@
 #include "skw_dfs.h"
 
 #define SKW_BIT_ULL(nr)        (1ULL << (nr))
+
+
+
+
+
 
 int to_skw_bw(enum nl80211_chan_width bw)
 {
@@ -624,19 +629,15 @@ out:
 	return ret;
 }
 
-static int skw_get_key(struct wiphy *wiphy, struct net_device *netdev,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
-		int link_id,
-#endif
-		u8 key_index, bool pairwise, const u8 *mac_addr, void *cookie,
+static int skw_get_key(struct wiphy *wiphy, struct wireless_dev *wdev,
+									int link_id, u8 key_index, bool pairwise, 
+									const u8 *mac_addr, void *cookie,
 		void (*callback)(void *cookie, struct key_params *params))
 {
 	skw_dbg("dev: %s, key_index: %d, pairwise: %d, mac: %pM\n",
-		netdev_name(netdev), key_index, pairwise, mac_addr);
-
+		netdev_name(wdev->netdev), key_index, pairwise, mac_addr);
 	return 0;
 }
-
 static int skw_cmd_add_key(struct wiphy *wiphy, struct net_device *dev,
 			   int cipher, u8 key_idx, int key_type,
 			   const u8 *key, int key_len, const u8 *addr)
@@ -740,21 +741,16 @@ static int skw_set_key(struct wiphy *wiphy, struct net_device *dev,
 	return ret;
 }
 
-static int skw_add_key(struct wiphy *wiphy, struct net_device *dev,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
-		       int link_id,
-#endif
-		       u8 key_idx, bool pairwise, const u8 *addr,
-		       struct key_params *params)
+static int skw_add_key(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id,
+		       u8 key_idx, bool pairwise, const u8 *addr, struct key_params *params)
 {
 	const u8 *mac;
 	int ret, key_type;
 	struct skw_key_conf *conf;
 	struct skw_peer_ctx *ctx;
-	struct skw_iface *iface = netdev_priv(dev);
-
+	struct skw_iface *iface = netdev_priv(wdev->netdev);
 	skw_dbg("%s, key_idx: %d, cipher: 0x%x, pairwise: %d, mac: %pM\n",
-		netdev_name(dev), key_idx, params->cipher, pairwise, addr);
+		netdev_name(wdev->netdev), key_idx, params->cipher, pairwise, addr);
 
 	key_type = pairwise ? SKW_KEY_TYPE_PTK : to_skw_gtk(key_idx);
 
@@ -779,7 +775,7 @@ static int skw_add_key(struct wiphy *wiphy, struct net_device *dev,
 
 		mutex_lock(&conf->lock);
 
-		ret = skw_set_key(wiphy, dev, conf, key_idx,
+		ret = skw_set_key(wiphy, wdev->netdev, conf, key_idx,
 				  key_type, addr, params);
 
 		mutex_unlock(&conf->lock);
@@ -796,7 +792,7 @@ static int skw_add_key(struct wiphy *wiphy, struct net_device *dev,
 
 		mutex_lock(&conf->lock);
 
-		ret = skw_set_key(wiphy, dev, conf, key_idx,
+		ret = skw_set_key(wiphy,wdev->netdev, conf, key_idx,
 				  key_type, mac, params);
 
 		mutex_unlock(&conf->lock);
@@ -809,38 +805,31 @@ static int skw_add_key(struct wiphy *wiphy, struct net_device *dev,
 	return ret;
 }
 
-static int __skw_add_key(struct wiphy *wiphy, struct net_device *dev,
+static int __skw_add_key(struct wiphy *wiphy, struct wireless_dev *wdev,
 			 int link_id, u8 key_idx, bool pairwise,
 			 const u8 *addr, struct key_params *params)
 {
-	return skw_add_key(wiphy, dev,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
-			link_id,
-#endif
+	return skw_add_key(wiphy, wdev, link_id,
 			key_idx, pairwise, addr, params);
 }
 
-static int skw_cmd_del_key(struct wiphy *wiphy, struct net_device *dev,
+static int skw_cmd_del_key(struct wiphy *wiphy, struct wireless_dev *wdev,
 			u8 key_idx, int key_type, int cipher, const u8 *addr)
 {
 	struct skw_key_params params;
-
 	memset(&params, 0x0, sizeof(params));
-
 	if (addr)
 		ether_addr_copy(params.mac_addr, addr);
 	else
 		memset(params.mac_addr, 0xff, ETH_ALEN);
-
 	params.key_type = key_type;
 	params.cipher_type = cipher;
 	params.key_id = key_idx;
-
-	return skw_send_msg(wiphy, dev, SKW_CMD_DEL_KEY, &params,
+	return skw_send_msg(wiphy, wdev->netdev, SKW_CMD_DEL_KEY, &params,
 			   sizeof(params), NULL, 0);
 }
 
-static int skw_remove_key(struct wiphy *wiphy, struct net_device *dev,
+static int skw_remove_key(struct wiphy *wiphy, struct wireless_dev *wdev,
 			struct skw_key_conf *conf, u8 key_idx,
 			int key_type, const u8 *addr)
 {
@@ -848,34 +837,26 @@ static int skw_remove_key(struct wiphy *wiphy, struct net_device *dev,
 	struct skw_key *key;
 
 	if (SKW_TEST(conf->installed_bitmap, BIT(key_idx))) {
-		ret = skw_cmd_del_key(wiphy, dev, key_idx, key_type,
+		ret = skw_cmd_del_key(wiphy, wdev, key_idx, key_type,
 				conf->skw_cipher, addr);
 		if (ret)
 			skw_err("failed, ret: %d\n", ret);
 	}
-
 	key = rcu_dereference_protected(conf->key[key_idx],
 			lockdep_is_held(&conf->lock));
-
 	RCU_INIT_POINTER(conf->key[key_idx], NULL);
-
 	SKW_CLEAR(conf->installed_bitmap, BIT(key_idx));
-
 	if (SKW_TEST(conf->flags, SKW_KEY_FLAG_WEP_SHARE))
 		SKW_CLEAR(conf->flags, SKW_KEY_FLAG_WEP_SHARE);
-
 	if (key)
 		kfree_rcu(key, rcu);
-
 	return 0;
 }
 
-static int skw_del_key(struct wiphy *wiphy, struct net_device *dev,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
-			int link_id,
-#endif
-			u8 key_idx, bool pairwise, const u8 *addr)
+static int skw_del_key(struct wiphy *wiphy, struct wireless_dev *wdev,
+			int link_id, u8 key_idx, bool pairwise, const u8 *addr)
 {
+	struct net_device *dev = wdev->netdev;
 	int ret, key_type;
 	struct skw_key_conf *conf;
 	const u8 *mac = NULL;
@@ -911,7 +892,7 @@ static int skw_del_key(struct wiphy *wiphy, struct net_device *dev,
 
 		mutex_lock(&conf->lock);
 
-		ret = skw_remove_key(wiphy, dev, conf, key_idx, key_type, addr);
+		ret = skw_remove_key(wiphy, wdev, conf, key_idx, key_type, addr);
 
 		mutex_unlock(&conf->lock);
 
@@ -926,7 +907,7 @@ static int skw_del_key(struct wiphy *wiphy, struct net_device *dev,
 
 		mutex_lock(&conf->lock);
 
-		ret = skw_remove_key(wiphy, dev, conf, key_idx, key_type, mac);
+	ret = skw_remove_key(wiphy, wdev, conf, key_idx, key_type, mac);
 
 		mutex_unlock(&conf->lock);
 	}
@@ -936,10 +917,7 @@ static int skw_del_key(struct wiphy *wiphy, struct net_device *dev,
 
 /* for WEP keys */
 static int skw_set_default_key(struct wiphy *wiphy, struct net_device *dev,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
-			       int link_id,
-#endif
-			       u8 key_idx, bool unicast, bool multicast)
+			       int link_id,  u8 key_idx, bool unicast, bool multicast)
 {
 	int ret = 0, key_len;
 	struct skw_key *key;
@@ -986,23 +964,18 @@ static int __skw_set_default_key(struct wiphy *wiphy, struct net_device *dev,
 			       int link_id, u8 key_idx, bool unicast,
 			       bool multicast)
 {
-	return skw_set_default_key(wiphy, dev,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
-				link_id,
-#endif
-				key_idx, unicast, multicast);
+	return skw_set_default_key(wiphy, dev, link_id,
+		key_idx, unicast, multicast);
 }
 
 /* for 11w */
-static int skw_set_default_mgmt_key(struct wiphy *wiphy, struct net_device *netdev,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
-			int link_id,
-#endif
-			u8 key_index)
+static int skw_set_default_mgmt_key(struct wiphy *wiphy, struct wireless_dev *wdev, 
+			int link_id, u8 key_index)
 {
-	skw_dbg("%s, key index: %d\n", netdev_name(netdev), key_index);
+	skw_dbg("%s, key index: %d\n", netdev_name(wdev->netdev), key_index);
 	return 0;
 }
+
 
 static int skw_set_mac_acl(struct wiphy *wiphy, struct net_device *dev,
 			const struct cfg80211_acl_data *acl)
@@ -1036,6 +1009,7 @@ static int skw_set_mac_acl(struct wiphy *wiphy, struct net_device *dev,
 
 	return 0;
 }
+
 
 static bool skw_channel_allowed(struct wiphy *wiphy, u16 channel)
 {
@@ -1106,10 +1080,11 @@ static bool skw_channel_allowed(struct wiphy *wiphy, u16 channel)
 	return false;
 }
 
-int skw_set_mib(struct wiphy *wiphy, struct net_device *dev)
+int skw_set_mib(struct wiphy *wiphy, struct wireless_dev *wdev)
 {
 	int ret = 0;
 	u16 *plen;
+	struct net_device *dev = wdev->netdev;
 	struct skw_tlv_conf conf;
 	struct skw_iface *iface = netdev_priv(dev);
 	u32 val_zero = 0;
@@ -1169,6 +1144,7 @@ int skw_set_mib(struct wiphy *wiphy, struct net_device *dev)
 	return ret;
 }
 
+
 static int skw_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			struct cfg80211_ap_settings *settings)
 {
@@ -1197,7 +1173,7 @@ static int skw_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		return -ENOTSUPP;
 	}
 
-	skw_set_mib(wiphy, dev);
+	ret=skw_set_mib(wiphy,&iface->wdev);
 
 	fixed = sizeof(struct skw_startap_param);
 	total = fixed +
@@ -1309,7 +1285,7 @@ static int skw_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	iface->sap.ht_required = settings->ht_required;
 	iface->sap.vht_required = settings->vht_required;
 
-	iface->sap.cfg.crypto.wep_keys = NULL;
+    //iface->sap.cfg.crypto.wep_keys[key->keyidx] = NULL;
 	iface->sap.cfg.crypto.psk = NULL;
 #else
 	iface->sap.cfg.ht_cap = NULL;
@@ -1328,6 +1304,7 @@ static int skw_start_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	return 0;
 }
+
 
 static int skw_sap_del_sta(struct wiphy *wiphy, struct net_device *dev,
 			struct skw_peer_ctx *ctx, u8 subtype, u16 reason)
@@ -1386,13 +1363,8 @@ static void skw_sap_flush_sta(struct wiphy *wiphy, struct skw_iface *iface,
 	}
 }
 
-static int skw_stop_ap(struct wiphy *wiphy,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
-		struct net_device *dev, unsigned int link_id
-#else
-		struct net_device *dev
-#endif
-		SKW_NULL)
+static int skw_stop_ap(struct wiphy *wiphy, struct net_device *dev, 
+									unsigned int link_id SKW_NULL)
 {
 	int ret;
 	struct skw_iface *iface = netdev_priv(dev);
@@ -1429,9 +1401,11 @@ static int skw_stop_ap(struct wiphy *wiphy,
 	return 0;
 }
 
+
 static int skw_change_beacon(struct wiphy *wiphy, struct net_device *dev,
-				struct cfg80211_beacon_data *bcn)
+				struct  cfg80211_ap_update *params)
 {
+	struct cfg80211_beacon_data *bcn=&params->beacon;
 	int ret = -1;
 	int total, fixed, offset = 0;
 	struct skw_iface *iface = netdev_priv(dev);
@@ -1506,14 +1480,11 @@ void skw_set_state(struct skw_sm *sm, enum SKW_STATES state)
 	sm->state = state;
 }
 
-int skw_change_station(struct wiphy *wiphy, struct net_device *dev,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 16, 0)
-			const u8 *mac,
-#else
-			u8 *mac,
-#endif
-			struct station_parameters *params)
+int skw_change_station(struct wiphy *wiphy, struct wireless_dev *wdev,	
+		const u8 *mac, struct station_parameters *params)
 {
+	struct net_device *dev = wdev->netdev;
+
 	struct skw_iface *iface = netdev_priv(dev);
 	u32 flags_set = params->sta_flags_set;
 	struct skw_peer_ctx *ctx = NULL;
@@ -1637,14 +1608,10 @@ int skw_delete_station(struct wiphy *wiphy, struct net_device *dev,
 	return skw_sap_del_sta(wiphy, dev, ctx, subtype, reason);
 }
 
-int skw_add_station(struct wiphy *wiphy, struct net_device *dev,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 16, 0)
-		    const u8 *mac,
-#else
-		    u8 *mac,
-#endif
-		    struct station_parameters *params)
+int skw_add_station(struct wiphy *wiphy, struct wireless_dev *wdev, 
+		    const u8 *mac,  struct station_parameters *params)
 {
+	struct net_device *dev = wdev->netdev;
 	struct skw_iface *iface = netdev_priv(dev);
 	struct skw_peer_ctx *ctx;
 	struct skw_peer *peer;
@@ -1695,25 +1662,13 @@ int skw_add_station(struct wiphy *wiphy, struct net_device *dev,
 	return 0;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 19, 0)
-static int skw_del_station(struct wiphy *wiphy, struct net_device *dev,
-			   struct station_del_parameters *params)
+static int skw_del_station(struct wiphy *wiphy, struct wireless_dev *wdev,  
+										  struct station_del_parameters *params)
 {
+	struct net_device *dev = wdev->netdev;
 	return skw_delete_station(wiphy, dev, params->mac,
 			params->subtype, params->reason_code);
 }
-#else
-static int skw_del_station(struct wiphy *wiphy, struct net_device *dev,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 16, 0)
-			   const
-#endif
-			   u8 *mac)
-{
-	return skw_delete_station(wiphy, dev, mac,
-				12,  /* Deauth */
-				WLAN_REASON_DEAUTH_LEAVING);
-}
-#endif
 
 static void skw_set_rate_info(struct skw_rate *rate, struct rate_info *rinfo)
 {
@@ -1722,8 +1677,6 @@ static void skw_set_rate_info(struct skw_rate *rate, struct rate_info *rinfo)
 		rate->flags, rate->mcs_idx, rate->bw,
 		rate->gi, rate->nss, rate->he_ru);
 #endif
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 0, 0)
 	switch (rate->bw) {
 	case SKW_RATE_INFO_BW_40:
 		rinfo->bw = RATE_INFO_BW_40;
@@ -1732,18 +1685,14 @@ static void skw_set_rate_info(struct skw_rate *rate, struct rate_info *rinfo)
 	case SKW_RATE_INFO_BW_80:
 		rinfo->bw = RATE_INFO_BW_80;
 		break;
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 	case SKW_RATE_INFO_BW_HE_RU:
 		rinfo->bw = RATE_INFO_BW_HE_RU;
 		rinfo->he_ru_alloc = rate->he_ru;
 		break;
-#endif
 	default:
 		rinfo->bw = RATE_INFO_BW_20;
 		break;
 	}
-#endif
 
 	rinfo->flags = 0;
 	switch (rate->flags) {
@@ -1766,7 +1715,6 @@ static void skw_set_rate_info(struct skw_rate *rate, struct rate_info *rinfo)
 
 		break;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0)
 	case SKW_RATE_INFO_FLAGS_HE:
 		rate->gi = skw_gi_to_nl80211_info_gi(rate->gi);
 		rinfo->mcs = rate->mcs_idx;
@@ -1775,21 +1723,16 @@ static void skw_set_rate_info(struct skw_rate *rate, struct rate_info *rinfo)
 		rinfo->he_dcm = rate->he_dcm;
 		rinfo->flags |= RATE_INFO_FLAGS_HE_MCS;
 		break;
-#endif
 	default:
 		rinfo->legacy = rate->legacy_rate;
 		break;
 	}
 }
 
-static int skw_get_station(struct wiphy *wiphy, struct net_device *dev,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 16, 0)
-			   const u8 *mac,
-#else
-			   u8 *mac,
-#endif
-			   struct station_info *sinfo)
+static int skw_get_station(struct wiphy *wiphy, struct wireless_dev *wdev, 
+			   const u8 *mac, struct station_info *sinfo)
 {
+	struct net_device *dev = wdev->netdev;
 	u64 ts;
 	int ret = -1;
 	struct skw_peer_ctx *ctx;
@@ -2448,7 +2391,13 @@ int skw_cmd_monitor(struct wiphy *wiphy, struct cfg80211_chan_def *chandef, u8 m
 	return ret;
 }
 
-static int skw_cmd_auth(struct wiphy *wiphy, struct net_device *dev,
+static int skw_cmd_auth(struct wiphy *wiphy, 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
+ struct net_device *dev,
+#else 
+ struct wireless_dev *wdev, 
+#endif
+
 			struct cfg80211_auth_request *req)
 {
 	int ret = 0;
@@ -2580,7 +2529,13 @@ static inline void skw_oper_and_vht_capa(struct ieee80211_vht_cap *vht_capa,
 		p1[i] &= p2[i];
 }
 
-static int skw_cmd_assoc(struct wiphy *wiphy, struct net_device *dev,
+static int skw_cmd_assoc(struct wiphy *wiphy, 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
+ struct net_device *dev,
+#else 
+ struct wireless_dev *wdev, 
+#endif
+
 			 struct cfg80211_assoc_request *req)
 {
 	int ret = 0;
@@ -2759,7 +2714,11 @@ int skw_sta_leave(struct wiphy *wiphy, struct net_device *dev,
 
 	memset(&iface->wmm, 0x0, sizeof(iface->wmm));
 
-	del_timer_sync(&iface->sta.core.timer);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
+        timer_shutdown_sync(&iface->sta.core.timer);
+#else
+        del_timer_sync(&iface->sta.core.timer);
+#endif
 
 	skw_set_state(&iface->sta.core.sm, SKW_STATE_NONE);
 	iface->sta.core.sm.flags = 0;
@@ -2892,7 +2851,7 @@ static int skw_auth(struct wiphy *wiphy, struct net_device *ndev,
 		if (req->key_len != 5)
 			key.cipher = SKW_CIPHER_SUITE_WEP104;
 
-		ret = __skw_add_key(wiphy, ndev, 0, req->key_idx, false, NULL, &key);
+		ret = __skw_add_key(wiphy, &iface->wdev, 0, req->key_idx, false, NULL, &key);
 		if (ret < 0) {
 			skw_err("add share key failed, ret: %d\n", ret);
 			goto unjoin;
@@ -2911,7 +2870,11 @@ static int skw_auth(struct wiphy *wiphy, struct net_device *ndev,
 	if (ret) {
 		skw_dbg("command auth failed, ret: %d\n", ret);
 
-		del_timer_sync(&iface->sta.core.timer);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
+        timer_shutdown_sync(&iface->sta.core.timer);
+#else
+        del_timer_sync(&iface->sta.core.timer);
+#endif
 		goto unjoin;
 	}
 
@@ -3015,7 +2978,11 @@ static int skw_assoc(struct wiphy *wiphy, struct net_device *dev,
 
 		core->cbss = NULL;
 
-		del_timer_sync(&core->timer);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 11, 0)
+        timer_shutdown_sync(&iface->sta.core.timer);
+#else
+        del_timer_sync(&iface->sta.core.timer);
+#endif
 
 		skw_unjoin(wiphy, dev, req->bss->bssid, SKW_LEAVE, false);
 		skw_set_state(&core->sm, SKW_STATE_NONE);
@@ -3396,8 +3363,8 @@ static u64 skw_tx_cookie(void)
 }
 
 static int skw_remain_on_channel(struct wiphy *wiphy, struct wireless_dev *wdev,
-				 struct ieee80211_channel *chan,
-				 unsigned int duration, u64 *cookie)
+				    struct ieee80211_channel *chan,
+				    unsigned int duration, u64 *cookie)				 
 {
 	int ret;
 	struct skw_roc_param roc;
@@ -3539,14 +3506,13 @@ static inline bool skw_is_rrm_report(const void *buf, int buf_len)
 	if (!ieee80211_is_action(mgmt->frame_control))
 		return false;
 
-	if (buf_len < IEEE80211_MIN_ACTION_SIZE +
-		      sizeof(mgmt->u.action.u.measurement))
+	if (buf_len < IEEE80211_MIN_ACTION_SIZE(measurement) )
 		return false;
 
 	if (mgmt->u.action.category != SKW_WLAN_CATEGORY_RADIO_MEASUREMENT)
 		return false;
 
-	if (mgmt->u.action.u.measurement.action_code != WLAN_ACTION_SPCT_MSR_RPRT)
+	if (mgmt->u.action.action_code != WLAN_ACTION_SPCT_MSR_RPRT)
 		return false;
 
 	return true;
@@ -3576,7 +3542,7 @@ static int __skw_cfg80211_mgmt_tx(struct wiphy *wiphy, struct skw_iface *iface,
 	if (limit_len > SKW_CMD_MAX_LEN) {
 		if (skw_is_rrm_report(frame, frame_len)) {
 			int head_offset = offsetof(struct ieee80211_mgmt,
-					u.action.u.measurement.element_id);
+					u.action.measurement.element_id);
 
 			int ret = -E2BIG;
 			int elem_len = 0, next_len = 0;
@@ -3656,7 +3622,7 @@ static int skw_cfg80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 }
 #endif
 
-static int skw_join_ibss(struct wiphy *wiphy, struct net_device *dev,
+static int  skw_join_ibss(struct wiphy *wiphy, struct net_device *dev,
 			struct cfg80211_ibss_params *params)
 {
 	int i;
@@ -3754,15 +3720,12 @@ static int skw_join_ibss(struct wiphy *wiphy, struct net_device *dev,
 				mgmt, pos - (u8 *)mgmt, DBM_TO_MBM(-30), GFP_KERNEL);
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 16, 0)
-	// fixme:
 	if (params->wep_keys) {
-		__skw_add_key(wiphy, dev, 0, params->wep_tx_key, true,
+		__skw_add_key(wiphy, &iface->wdev, 0, params->wep_tx_key, true,
 			    iface->ibss.bssid, params->wep_keys);
 
 		__skw_set_default_key(wiphy, dev, 0, params->wep_tx_key, true, true);
 	}
-#endif
 
 	cfg80211_put_bss(wiphy, bss);
 
@@ -3789,7 +3752,7 @@ static int skw_leave_ibss(struct wiphy *wiphy, struct net_device *dev)
 			&params, sizeof(params), NULL, 0);
 }
 
-static int skw_set_wiphy_params(struct wiphy *wiphy, u32 changed)
+static int skw_set_wiphy_params(struct wiphy *wiphy, int radio_idx,  u32 changed)
 {
 	int ret = 0;
 	u16 *plen;
@@ -4139,13 +4102,8 @@ static int skw_del_tx_ts(struct wiphy *wiphy, struct net_device *ndev,
 }
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 11, 0)
-static int skw_tdls_oper(struct wiphy *wiphy, struct net_device *ndev,
-			 u8 *peer_addr, enum nl80211_tdls_operation oper)
-#else
-static int skw_tdls_oper(struct wiphy *wiphy, struct net_device *ndev,
-			 const u8 *peer_addr, enum nl80211_tdls_operation oper)
-#endif
+static int skw_tdls_oper(struct wiphy *wiphy, struct net_device *ndev, 
+				const u8 *peer_addr, enum nl80211_tdls_operation oper)
 {
 	int ret = 0;
 	struct skw_iface *iface = netdev_priv(ndev);
@@ -4532,7 +4490,7 @@ static int skw_probe_client(struct wiphy *wiphy, struct net_device *dev,
 	return 0;
 }
 
-static int skw_set_monitor_channel(struct wiphy *wiphy,
+static int skw_set_monitor_channel(struct wiphy *wiphy,struct net_device *dev,
 		struct cfg80211_chan_def *chandef)
 {
 	return skw_cmd_monitor(wiphy, chandef, SKW_MONITOR_COMMON);
@@ -4674,7 +4632,6 @@ static int skw_update_ft_ies(struct wiphy *wiphy, struct net_device *dev,
 }
 
 #ifdef CONFIG_SKW_DFS_MASTER
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 16, 0)
 static int skw_start_radar_detection(struct wiphy *wiphy, struct net_device *ndev,
 				struct cfg80211_chan_def *chandef, u32 cac_time_ms)
 {
@@ -4699,34 +4656,20 @@ static int skw_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 	return skw_dfs_trig_chan_switch(wiphy, dev, params->beacon_csa.tail,
 				params->beacon_csa.tail_len);
 }
-
-#endif
 #endif
 
 static int skw_tdls_mgmt(struct wiphy *wiphy, struct net_device *dev,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 16, 0)
-			 const
-#endif
-			 u8 *peer, u8 action, u8 token, u16 status,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0)
-			 u32 peer_capability,
-#endif
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0)
-			 bool initiator,
-#endif
-			 const u8 *ies, size_t ies_len)
+			   const u8 *peer, int link_id, u8 action,
+			   u8 token, u16 status,
+			   u32 peer_capability, bool initiator,
+			   const u8 *ies, size_t ies_len)
+
 {
 	u32 capa = 0;
 	bool tdls_initiator = false;
 	struct skw_core *skw = wiphy_priv(wiphy);
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 15, 0)
 	capa = peer_capability;
-#endif
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 17, 0)
 	tdls_initiator = initiator;
-#endif
 
 	return skw_tdls_build_send_mgmt(skw, dev, peer, action, token, status,
 					capa, tdls_initiator, ies, ies_len);

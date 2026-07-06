@@ -30,7 +30,7 @@
 #include <linux/if_tunnel.h>
 #include <linux/firmware.h>
 #include <generated/utsrelease.h>
-#include <linux/rfkill-wlan.h>
+#include <linux/rfkill.h>
 
 #include "skw_core.h"
 #include "skw_cfg80211.h"
@@ -1311,19 +1311,14 @@ static void skw_buffer_deinit(struct skw_core *skw)
 static struct wakeup_source *skw_wakeup_source_init(const char *name)
 {
 	struct wakeup_source *ws;
-
-	ws = wakeup_source_create(name);
-	if (ws)
-		wakeup_source_add(ws);
-
+	ws = wakeup_source_register(NULL, name);
 	return ws;
 }
 
 static void skw_wakeup_source_deinit(struct wakeup_source *ws)
 {
 	if (ws) {
-		wakeup_source_remove(ws);
-		wakeup_source_destroy(ws);
+		wakeup_source_unregister(ws);
 	}
 }
 
@@ -1972,7 +1967,8 @@ static int skw_drv_probe(struct platform_device *pdev)
 		goto core_deinit;
 
 	if (!is_valid_ether_addr(skw_mac))
-		rockchip_wifi_mac_addr(skw_mac);
+		eth_random_addr(skw_mac);
+		//rockchip_wifi_mac_addr(skw_mac);
 
 	skw_setup_mac_address(wiphy, skw_mac, chip.mac);
 
@@ -2031,7 +2027,7 @@ failed:
 	return ret;
 }
 
-static int skw_drv_remove(struct platform_device *pdev)
+static void skw_drv_remove(struct platform_device *pdev)
 {
 	int i;
 	struct wiphy *wiphy;
@@ -2040,7 +2036,7 @@ static int skw_drv_remove(struct platform_device *pdev)
 	skw_info("%s\n", pdev->name);
 
 	if (!skw)
-		return 0;
+		return ;
 
 	wiphy = priv_to_wiphy(skw);
 
@@ -2075,7 +2071,7 @@ static int skw_drv_remove(struct platform_device *pdev)
 
 	atomic_dec(&skw_chip_idx);
 
-	return 0;
+
 }
 
 static struct platform_driver skw_drv = {

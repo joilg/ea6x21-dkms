@@ -611,7 +611,11 @@ static void skw_mode_deinit(struct wiphy *wiphy, struct skw_iface *iface,
 			SKW_KFREE(iface->sta.conn);
 		}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6,15,0)
+		timer_delete_sync(&iface->sta.core.timer);
+#else
 		del_timer_sync(&iface->sta.core.timer);
+#endif
 		cancel_work_sync(&iface->sta.work);
 
 		skw_set_state(&iface->sta.core.sm, SKW_STATE_NONE);

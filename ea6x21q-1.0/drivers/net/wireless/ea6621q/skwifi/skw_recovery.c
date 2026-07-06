@@ -86,7 +86,7 @@ static int skw_recovery_sta(struct wiphy *wiphy, struct skw_recovery_data *rd,
 			continue;
 
 		if (ether_addr_equal(peer->addr, core->bss.bssid)) {
-			del_timer_sync(&core->timer);
+			timer_delete_sync(&core->timer);
 			cancel_work_sync(&iface->sta.work);
 
 			ret = skw_cmd_unjoin(wiphy, dev, peer->addr,
@@ -162,7 +162,7 @@ static int skw_recovery_sap(struct wiphy *wiphy, struct skw_recovery_data *rd,
 	struct skw_startap_param *param;
 	struct net_device *ndev = iface->ndev;
 
-	ret = skw_set_mib(wiphy, iface->ndev);
+	ret = skw_set_mib(wiphy, &iface->wdev);
 	if (ret) {
 		skw_err("set tlv failed, ret: %d\n", ret);
 		return ret;

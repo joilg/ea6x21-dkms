@@ -21,7 +21,7 @@
 #include <linux/ktime.h>
 #include <linux/module.h>
 #include <linux/of_device.h>
-#include <linux/of_gpio.h>
+//#include <linux/of_gpio.h>
 #include <linux/pm_runtime.h>
 #include <linux/mmc/card.h>
 #include <linux/mmc/core.h>

@@ -738,27 +738,17 @@ static inline enum nl80211_he_gi skw_gi_to_nl80211_info_gi(enum SKW_HE_GI skw_gi
 int to_skw_bw(enum nl80211_chan_width bw);
 struct wiphy *skw_alloc_wiphy(int priv_size);
 int skw_setup_wiphy(struct wiphy *wiphy, struct skw_chip_info *chip);
-
 int skw_mgmt_tx(struct wiphy *wiphy, struct skw_iface *iface,
 		struct ieee80211_channel *chan, u32 wait, u64 *cookie,
 		bool dont_wait_ack, const void *frame, int frame_len);
-
 int skw_cmd_del_sta(struct wiphy *wiphy, struct net_device *dev,
 		const u8 *mac, u8 type, u16 reason, bool tx_frame);
-
 int skw_delete_station(struct wiphy *wiphy, struct net_device *dev,
 			const u8 *mac, u8 subtype, u16 reason);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 16, 0)
-int skw_change_station(struct wiphy *wiphy, struct net_device *dev,
+int skw_change_station(struct wiphy *wiphy, struct wireless_dev *wdev,
 		const u8 *mac, struct station_parameters *params);
-int skw_add_station(struct wiphy *wiphy, struct net_device *dev,
+int skw_add_station(struct wiphy *wiphy, struct wireless_dev *wdev,
 		    const u8 *mac, struct station_parameters *params);
-#else
-int skw_change_station(struct wiphy *wiphy, struct net_device *dev,
-			u8 *mac, struct station_parameters *params);
-int skw_add_station(struct wiphy *wiphy, struct net_device *dev,
-		u8 *mac, struct station_parameters *params);
-#endif
 
 void skw_scan_done(struct skw_core *skw, struct skw_iface *iface, bool abort);
 
@@ -775,7 +765,7 @@ int skw_connect_sae_auth(struct wiphy *wiphy, struct net_device *dev,
 			 struct cfg80211_bss *bss);
 int skw_connect_auth(struct wiphy *wiphy, struct net_device *dev,
 		struct skw_connect_param *conn, struct cfg80211_bss *bss);
-int skw_connect_assoc(struct wiphy *wiphy, struct net_device *ndev,
+int skw_connect_assoc(struct wiphy *wiphy, struct net_device *dev,
 		struct skw_connect_param *conn);
 void skw_connected(struct net_device *dev, struct skw_connect_param *conn,
 		   const u8 *req_ie, int req_ie_len, const u8 *resp_ie,
@@ -784,7 +774,7 @@ void skw_disconnected(struct net_device *dev, u16 reason,
 		bool local_gen, gfp_t gfp);
 int skw_cmd_unjoin(struct wiphy *wiphy, struct net_device *ndev,
 		   const u8 *addr, u16 reason, bool tx_frame);
-int skw_set_mib(struct wiphy *wiphy, struct net_device *dev);
+int skw_set_mib(struct wiphy *wiphy, struct wireless_dev *wdev);
 int skw_wow_disable(struct wiphy *wiphy);
 int skw_cmd_monitor(struct wiphy *wiphy, struct cfg80211_chan_def *chandef, u8 mode);
 #endif

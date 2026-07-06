@@ -284,6 +284,13 @@ skw_compat_classify8021d(struct sk_buff *skb, void *qos_map)
 #endif
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 0, 0) // Oder die genaue Version, ab der Ihr Treiber bricht
+static inline void skw_compat_rx_assoc_resp(struct net_device *dev, 
+                                            const struct cfg80211_rx_assoc_resp_data *data)
+{
+    cfg80211_rx_assoc_resp(dev, data);
+}
+#else
 static inline void skw_compat_rx_assoc_resp(struct net_device *dev,
 			struct cfg80211_bss *bss, const u8 *buf, size_t len,
 			int uapsd, const u8 *req_ies, size_t req_ies_len)
@@ -314,6 +321,8 @@ static inline void skw_compat_rx_assoc_resp(struct net_device *dev,
 	cfg80211_send_rx_assoc(dev, bss, buf, len);
 #endif
 }
+
+#endif
 
 static inline void
 skw_compat_rx_mlme_mgmt(struct net_device *dev, void *buf, size_t len)
@@ -473,6 +482,8 @@ static inline void skw_ch_switch_notify(struct net_device *dev,
 		struct cfg80211_chan_def *chandef, u8 count,  bool quiet)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
+	cfg80211_ch_switch_started_notify(dev, chandef, 0, count, quiet);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0)
 	/* punct_bitmap added in 6.3 */
 	cfg80211_ch_switch_started_notify(dev, chandef, 0, count, quiet, 1);
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(5, 11, 0)

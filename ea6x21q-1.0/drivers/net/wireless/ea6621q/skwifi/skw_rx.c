@@ -23,6 +23,8 @@
 #include <linux/ip.h>
 #include <linux/ipv6.h>
 #include <net/ip6_checksum.h>
+#include <net/rps.h>
+#include <net/netdev_rx_queue.h>
 
 #include "skw_core.h"
 #include "skw_msg.h"
@@ -209,53 +211,39 @@ static void skw_csum_verify(struct skw_rx_desc *desc, struct sk_buff *skb)
 }
 
 #ifdef CONFIG_RPS
-int skw_init_rps_map(struct netdev_rx_queue *queue, int unmask)
+int skw_init_rps_map(struct netdev_rx_queue *queue, cpumask_var_t unmask)
 {
 	int i, cpu;
 	struct rps_map *map, *old_map;
 	static DEFINE_SPINLOCK(rps_map_lock);
 
 	map = kzalloc(max_t(unsigned int,
-			    RPS_MAP_SIZE(cpumask_weight(cpu_online_mask)), L1_CACHE_BYTES),
+			    RPS_MAP_SIZE(cpumask_weight(unmask)), L1_CACHE_BYTES),
 		      GFP_KERNEL);
-	if (!map)
-		return -ENOMEM;
-
+	if (!map) 	return -ENOMEM;
 	i = 0;
-	for_each_cpu(cpu, cpu_online_mask)
-		if (cpu != unmask)
-			map->cpus[i++] = cpu;
 
+	for_each_cpu(cpu, cpu_online_mask)
+		if (!cpumask_test_cpu(cpu, unmask))
+			map->cpus[i++] = cpu;
 	if (i) {
 		map->len = i;
 	} else {
 		kfree(map);
 		map = NULL;
 	}
-
 	spin_lock(&rps_map_lock);
 	old_map = rcu_dereference_protected(queue->rps_map,
 					    lockdep_is_held(&rps_map_lock));
 	rcu_assign_pointer(queue->rps_map, map);
 	spin_unlock(&rps_map_lock);
-
 	if (map) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0))
 		static_key_slow_inc(&rps_needed.key);
-#else
-		static_key_slow_inc(&rps_needed);
-#endif
 	}
-
 	if (old_map) {
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0))
 		static_key_slow_dec(&rps_needed.key);
-#else
-		static_key_slow_dec(&rps_needed);
-#endif
 		kfree_rcu(old_map, rcu);
 	}
-
 	return 0;
 }
 #endif
@@ -353,9 +341,17 @@ static void skw_deliver_skb(struct skw_iface *iface, struct sk_buff *skb)
 
 
 #ifdef CONFIG_RPS
-	if (iface->cpu_id != smp_processor_id()) {
-		iface->cpu_id = smp_processor_id();
-		skw_init_rps_map(iface->ndev->_rx, iface->cpu_id);
+	struct cpumask *rps_default_mask;
+#if IS_ENABLED(CONFIG_RPS)
+    rps_default_mask = dev_net(iface->ndev)->core.rps_default_mask;
+#else
+    rps_default_mask = NULL;
+#endif
+	if (rps_default_mask && !cpumask_empty(rps_default_mask)) {
+		skw_init_rps_map(iface->ndev->_rx, rps_default_mask);
+//	if (iface->cpu_id != smp_processor_id()) {
+//		iface->cpu_id = smp_processor_id();
+//		skw_init_rps_map(iface->ndev->_rx, iface->cpu_id);
 	}
 #endif
 
@@ -787,7 +783,7 @@ static void skw_reorder_force_release(struct skw_tid_rx *tid_rx,
 	    atomic_read(&tid_rx->reorder->ref_cnt) == tid_rx->ref_cnt &&
 	    (ieee80211_sn_less(tid_rx->reorder->expired.sn, to_sn) ||
 	     ieee80211_sn_less(to_sn, tid_rx->win_start)))
-		del_timer(&tid_rx->reorder->timer);
+		timer_delete(&tid_rx->reorder->timer);
 
 	while (ieee80211_sn_less(tid_rx->win_start, target)) {
 		struct sk_buff_head *list;
@@ -856,7 +852,7 @@ static void skw_reorder_release(struct skw_reorder_rx *reorder,
 	for (i = 0; i < tid_rx->win_size; i++) {
 		if (tid_rx->stored_num == 0) {
 			if (timer_pending(&reorder->timer))
-				del_timer(&reorder->timer);
+				timer_delete(&reorder->timer);
 
 			break;
 		}
@@ -890,7 +886,7 @@ static void skw_reorder_release(struct skw_reorder_rx *reorder,
 
 			if (timer_pending(&reorder->timer) &&
 			    reorder->expired.sn == tid_rx->win_start)
-				del_timer(&reorder->timer);
+				timer_delete(&reorder->timer);
 
 			if (SKW_SKB_RXCB(skb)->amsdu_flags & SKW_AMSDU_FLAG_TAINT) {
 				__skb_queue_purge(list);
@@ -1076,7 +1072,7 @@ static void skw_ampdu_reorder(struct skw_core *skw, struct skw_rx_desc *desc,
 
 		if (timer_pending(&reorder->timer) &&
 			reorder->expired.sn == tid_rx->win_start)
-			del_timer(&reorder->timer);
+			timer_delete(&reorder->timer);
 
 		tid_rx->win_start = ieee80211_sn_inc(tid_rx->win_start);
 
@@ -1102,7 +1098,7 @@ out:
 			skw_set_reorder_timer(tid_rx, desc->sn);
 	} else {
 		if (timer_pending(&reorder->timer))
-			del_timer(&reorder->timer);
+			timer_delete(&reorder->timer);
 	}
 }
 
@@ -1492,7 +1488,7 @@ int skw_del_tid_rx(struct skw_peer *peer, u16 tid)
 
 	smp_wmb();
 
-	del_timer_sync(&reorder->timer);
+	timer_delete_sync(&reorder->timer);
 
 	if (tid_rx) {
 #ifdef CONFIG_SKW_GKI_DRV

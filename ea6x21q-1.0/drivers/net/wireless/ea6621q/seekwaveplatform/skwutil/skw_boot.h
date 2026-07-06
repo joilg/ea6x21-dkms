@@ -63,12 +63,13 @@
 #endif
 
 #ifdef CONFIG_NO_GKI
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 13, 0))
   MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
+#else
+  MODULE_IMPORT_NS("VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver");
+#endif
 #endif
 
-#if KERNEL_VERSION(5, 0, 0) <= LINUX_VERSION_CODE
-  MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);
-#endif
 /****************************************************************
  *Description:the skwsdio log define and the skwsdio data debug,
  *Func: skwsdio_log, skwsdio_err, skwsdio_data_pr;

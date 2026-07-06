@@ -183,6 +183,7 @@ static int skw_sta_rx_assoc(struct skw_iface *iface, int freq,
 	u8 *assoc_req_ie = NULL;
 	struct ieee80211_mgmt *mgmt = buf;
 	struct skw_sta_core *core = &iface->sta.core;
+	struct cfg80211_rx_assoc_resp_data assoc_data = {	.uapsd_queues = -1,};
 
 	skw_sta_assert_lock(&iface->sta.core);
 
@@ -224,9 +225,13 @@ static int skw_sta_rx_assoc(struct skw_iface *iface, int freq,
 	if (core->assoc_req_ie_len)
 		assoc_req_ie = core->assoc_req_ie;
 
-	if (iface->sta.sme_external)
-		skw_compat_rx_assoc_resp(iface->ndev, core->cbss, buf, len, 0,
-				assoc_req_ie, core->assoc_req_ie_len);
+	if (iface->sta.sme_external) {
+		assoc_data.links[0].bss = core->cbss;   // Das BSS-Objekt
+		assoc_data.buf = buf;          // Zeiger auf die empfangenen Daten (Payload)
+		assoc_data.len = len;          // Länge der Daten
+		assoc_data.links[0].status = 0;    // Der Statuscode (war vorher das 5. Argument '0')
+		skw_compat_rx_assoc_resp(iface->ndev, &assoc_data);
+	}
 	else
 		skw_mlme_sta_rx_assoc(iface, NULL, buf, len, assoc_req_ie,
 				core->assoc_req_ie_len);
@@ -253,10 +258,7 @@ static int skw_sta_rx_mgmt(struct skw_core *skw, struct skw_iface *iface,
 	}
 
 	iface->sta.last_seq_ctrl = seq_ctrl;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 0)
-	mutex_lock(&iface->wdev.mtx);
-#endif
-	skw_sta_lock(&iface->sta.core);
+	wiphy_lock(iface->wdev.wiphy);
 
 	switch (fc) {
 	case IEEE80211_STYPE_DEAUTH:
@@ -280,9 +282,7 @@ static int skw_sta_rx_mgmt(struct skw_core *skw, struct skw_iface *iface,
 	}
 
 	skw_sta_unlock(&iface->sta.core);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 0)
-	mutex_unlock(&iface->wdev.mtx);
-#endif
+	wiphy_unlock(iface->wdev.wiphy);
 
 	return ret;
 }
@@ -301,13 +301,13 @@ static void skw_ibss_add_sta(struct skw_iface *iface, void *frame,
 		return;
 
 	memset(&params, 0x0, sizeof(params));
-	ret = skw_add_station(iface->wdev.wiphy, iface->ndev,
+	ret = skw_add_station(iface->wdev.wiphy, &iface->wdev,
 			mgmt->sa, &params);
 	if (ret < 0)
 		return;
 
 	params.sta_flags_set |= BIT(NL80211_STA_FLAG_ASSOCIATED);
-	skw_change_station(iface->wdev.wiphy, iface->ndev,
+	skw_change_station(iface->wdev.wiphy, &iface->wdev,
 			mgmt->sa, &params);
 }
 
@@ -520,7 +520,7 @@ void skw_del_sta_event(struct skw_iface *iface, const u8 *addr, u16 reason)
 				 -5400, (void *)&mgmt,
 				 SKW_DEAUTH_FRAME_LEN, 0, GFP_ATOMIC);
 	} else {
-		cfg80211_del_sta(iface->ndev, addr, GFP_KERNEL);
+		cfg80211_del_sta(&iface->wdev, addr, GFP_KERNEL);
 	}
 }
 
@@ -1545,7 +1545,7 @@ static inline void skw_cmd_unlock(struct skw_core *skw, unsigned long flags)
 	if (!(flags & BIT(SKW_CMD_FLAG_NO_WAKELOCK)))
 		__pm_relax(skw->cmd.ws);
 
-	mutex_unlock(&skw->cmd.lock);
+	mutex_lock(&skw->cmd.lock);
 }
 
 static bool skw_cmd_tx_allowed(struct skw_core *skw, int inst, int cmd, unsigned long mask)

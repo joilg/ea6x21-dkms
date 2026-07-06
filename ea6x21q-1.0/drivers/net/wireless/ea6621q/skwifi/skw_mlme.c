@@ -238,7 +238,7 @@ static void skw_mlme_ap_assoc_cb(struct skw_iface *iface,
 
 		params.sta_flags_set = 0;
 		params.sta_flags_set |= BIT(NL80211_STA_FLAG_ASSOCIATED);
-		skw_change_station(iface->wdev.wiphy, iface->ndev,
+		skw_change_station(iface->wdev.wiphy, &iface->wdev,
 				client->addr, &params);
 
 		memset(&info, 0x0, sizeof(info));
@@ -250,7 +250,7 @@ static void skw_mlme_ap_assoc_cb(struct skw_iface *iface,
 #endif
 		}
 
-		cfg80211_new_sta(iface->ndev, client->addr,
+		cfg80211_new_sta(&iface->wdev, client->addr,
 				 &info, GFP_KERNEL);
 		SKW_KFREE(client->assoc_req_ie);
 		client->assoc_req_ie = NULL;
@@ -432,7 +432,7 @@ static int skw_mlme_ap_auth_handler(struct skw_iface *iface, int freq,
 		}
 
 		memset(&sta_params, 0x0, sizeof(sta_params));
-		skw_add_station(wiphy, iface->ndev, mgmt->sa, &sta_params);
+		skw_add_station(wiphy,&iface->wdev, mgmt->sa, &sta_params);
 	}
 
 	if (ieee80211_has_retry(mgmt->frame_control) &&
@@ -1005,7 +1005,7 @@ int skw_mlme_ap_rx_mgmt(struct skw_iface *iface, u16 fc, int freq,
 
 		if (client->state >= SKW_STATE_ASSOCED) {
 			//notify hostapd to update state and delete sta
-			cfg80211_del_sta(iface->ndev, client->addr, GFP_KERNEL);
+			cfg80211_del_sta(&iface->wdev, client->addr, GFP_KERNEL);
 		} else if (client->state >= SKW_STATE_AUTHED) {
 			//just delete local sta info
 			skw_mlme_ap_del_sta(iface->wdev.wiphy,
