@@ -13,11 +13,9 @@ function extension_finish_config__install_ea6x21_dkms() {
 
 	# Pre-download ea6x21 DKMS source on the host side (which has direct GitHub access).
 	# The Docker container may not have direct GitHub access (e.g. when using ghproxy).
-	declare down_dir="${SRC}/cache/ea6x21-dkms"
+	declare down_dir="${SRC}/cache/ea6x21-dkms-${KERNEL_MAJOR_MINOR}"
 	mkdir -p "${down_dir}"
-	
-	declare down_url="https://github.com/joilg/ea6x21-dkms/archive/refs/heads/main.zip"
-		#	for kernel > 7.0   https://github.com/joilg/ea6x21-dkms/archive/refs/heads/7.0.zip
+	declare down_url="https://github.com/joilg/ea6x21-dkms/archive/refs/heads/${KERNEL_MAJOR_MINOR}.zip"
 	if [[ ! -f "${down_dir}/source.zip" ]]; then
 		display_alert "Downloading ea6x21 DKMS source" "${down_url}" "info"
 		run_host_command_logged mkdir -p "${down_dir}"
@@ -39,15 +37,11 @@ function post_install_kernel_debs__install_ea6x21_dkms_package() {
 	use_clean_environment="yes" chroot_sdcard_apt_get_install "dkms"
 
 	# Copy pre-downloaded ea6x21 source into the chroot
-	declare down_dir="${SRC}/cache/ea6x21-dkms"
+	declare down_dir="${SRC}/cache/ea6x21-dkms-${KERNEL_MAJOR_MINOR}"
 	cp "${down_dir}/source.zip" "${SDCARD}/tmp/source.zip"
 
 	# Extract source into /usr/src/ea6x21-1.0
-	use_clean_environment="yes" chroot_sdcard "mkdir -p /usr/src/ea6x21-1.0"
-	use_clean_environment="yes" chroot_sdcard "unzip /tmp/source.zip -d /tmp/"
-	use_clean_environment="yes" chroot_sdcard "cp -a /tmp/ea6x21-dkms-main/. /usr/src/ea6x21-1.0/"
-	use_clean_environment="yes" chroot_sdcard "find /tmp/ea6x21-dkms-main/"
-	use_clean_environment="yes" chroot_sdcard "find /usr/src/ea6x21-1.0/"
+	use_clean_environment="yes" chroot_sdcard "unzip /tmp/source.zip -d /usr/src/"
 	use_clean_environment="yes" chroot_sdcard "rm -rf /tmp/ea6x21-main /tmp/source.zip"
 
 	# Build and install the kernel module via DKMS
@@ -64,9 +58,9 @@ function post_install_kernel_debs__install_ea6x21_dkms_package() {
 	fi
 	display_alert "Target kernel version for DKMS" "${target_kver}" "debug"
 
-	use_clean_environment="yes" chroot_sdcard "dkms add -m ea6x21 -v 1.0"
-	use_clean_environment="yes" chroot_sdcard "dkms build -m ea6x21 -v 1.0 -k ${target_kver}"
-	use_clean_environment="yes" chroot_sdcard "dkms install -m ea6x21 -v 1.0 -k ${target_kver}"
+	use_clean_environment="yes" chroot_sdcard "dkms add -m ea6x21-dkms -v ${KERNEL_MAJOR_MINOR}"
+	use_clean_environment="yes" chroot_sdcard "dkms build -m ea6x21-dkms -v ${KERNEL_MAJOR_MINOR} -k ${target_kver}"
+	use_clean_environment="yes" chroot_sdcard "dkms install -m ea6x21-dkms -v ${KERNEL_MAJOR_MINOR} -k ${target_kver}"
 
 	display_alert "ea6x21 DKMS driver installed" "${EXTENSION}" "info"
 }
