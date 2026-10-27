@@ -119,9 +119,10 @@ Apply overlay with
 
 1. Clone this repository directly onto your device:
 ```
-   git clone https://github.com/joilg/dkms-ea6x21.git
-   sudo cp -r ea6x21-dkms/ea6x21p-1.0 /usr/src/
-```
+  cd /usr/src
+  git clone https://github.com/joilg/ea6x21-dkms.git
+ 
+ ```
 
 2. Firmware and Calibration Assets Placement
 Pplace your vendor calibration binaries into the core Linux system firmware directories:
@@ -145,6 +146,16 @@ sudo dkms build -m ea6x21q -v 1.0
 ```
  sudo dkms install -m ea6x21q -v 1.0 
 ```
+
+one line
+```
+sudo dkms remove -m ea6x21q -v 1.0; sudo dkms add -m ea6x21q -v 1.0 && sudo dkms build -m ea6x21q -v 1.0 && sudo dkms install -m ea6x21q -v 1.0 || cat /var/lib/dkms/ea6x21q/1.0/build/make.log
+```
+
+
+
+
+
 5. load modules  
 ```
 modprobe skw_sdio
@@ -201,6 +212,16 @@ It should report `<BROADCAST,MULTICAST,UP,LOWER_UP>` with a dynamic IP assigned 
 use your linux Systemcommands   to connect to WIFI accesspoint
 Armbian OS use ** armbian-config **
 
+### test
+```
+ip link show wlan0
+sudo iw dev wlan0 link
+iperf3 -c fritz.box -p 4711
+
+sudo apt install speedtest-cli
+speedtest-cli
+
+```
 
 ### 🔷 Bluetooth Subsystem Check
 Run `hciconfig` to make sure your host controller interface configuration is fully deployed:
