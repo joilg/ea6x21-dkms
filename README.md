@@ -117,34 +117,38 @@ Apply overlay with
 
 ## 🚀 Installation via DKMS
 
-1. Clone this repository directly onto your device:
+1.Download repository directly onto your device:
 ```
-   git clone https://github.com/joilg/dkms-ea6x21.git
-   sudo cp -r ea6x21-dkms/ea6x21p-1.0 /usr/src/
+KERNEL_MAJOR_MINOR=$(uname -r | cut -c1-3)
+echo $KERNEL_MAJOR_MINOR
+down_dir="/tmp/cache/ea6x21-dkms-${KERNEL_MAJOR_MINOR}"
+mkdir -p  ${down_dir}
+down_url="https://github.com/joilg/ea6x21-dkms/archive/refs/heads/${KERNEL_MAJOR_MINOR}.zip"
+wget ${down_url} -O ${down_dir}/source.zip
+
+cp "${down_dir}/source.zip" "/tmp/source.zip"
+unzip /tmp/source.zip -d /usr/src/
+rm -rf /tmp/ea6x21-main /tmp/source.zip
 ```
 
 2. Firmware and Calibration Assets Placement
 Pplace your vendor calibration binaries into the core Linux system firmware directories:
 ```
 sudo mkdir /usr/lib/firmware/skw
-sudo cp dkms-ea6x21q/ea6x21p/firmware/*  /usr/lib/firmware/skw/
+sudo cp dkms-ea6x21/firmware/*  /usr/lib/firmware/skw/
 
 ```
 
-3. Register the driver source code directory tree with DKMS:
+
+4. Build and install the  module binaries against your active system kernel headers:
 ```
-sudo dkms add -m ea6x21q -v 1.0
+# Build and install the kernel module via DKMS
+dkms add -m ea6x21-dkms -v ${KERNEL_MAJOR_MINOR}
+dkms build -m ea6x21-dkms -v ${KERNEL_MAJOR_MINOR} 
+dkms install -m ea6x21-dkms -v ${KERNEL_MAJOR_MINOR} 
+
 ```
 
-4. Build the modified module binaries against your active system kernel headers:
-```
-sudo dkms build -m ea6x21q -v 1.0
-```
-
-4. Install the module into the active kernel environment:
-```
- sudo dkms install -m ea6x21q -v 1.0 
-```
 5. load modules  
 ```
 modprobe skw_sdio
