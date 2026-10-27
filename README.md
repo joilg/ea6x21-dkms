@@ -149,7 +149,7 @@ sudo dkms build -m ea6x21q -v 1.0
 
 one line
 ```
-sudo dkms remove -m ea6x21q -v 1.0; sudo dkms add -m ea6x21q -v 1.0 && sudo dkms build -m ea6x21q -v 1.0 && sudo dkms install -m ea6x21q -v 1.0 || cat /var/lib/dkms/ea6x21q/1.0/build/make.log
+ cd /usr/src; rm -rf  ea6x21-dkms; git clone -b 6.1 https://github.com/joilg/ea6x21-dkms.git && sudo dkms remove -m ea6x21q -v 1.0; sudo dkms add -m ea6x21q -v 1.0 && sudo dkms build -m ea6x21q -v 1.0 && sudo dkms install -m ea6x21q -v 1.0 || cat /var/lib/dkms/ea6x21q/1.0/build/make.log
 ```
 
 
